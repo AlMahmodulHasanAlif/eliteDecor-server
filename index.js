@@ -3,7 +3,7 @@ require("dotenv").config();
 const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 3000;
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 //middleware
 app.use(cors());
@@ -52,8 +52,27 @@ async function run() {
     app.get("/services/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
-      const service = await servicesCollection.findOne(query);
-      res.send(service);
+      const result = await servicesCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.get("/decorators/top", async (req, res) => {
+      const { limit } = req.query;
+      const query = {
+        role: "decorator",
+        "decoratorInfo.status": "active",
+      };
+
+      let cursor = usersCollection
+        .find(query)
+        .sort({ "decoratorInfo.rating": -1 });
+
+      if (limit) {
+        cursor = cursor.limit(parseInt(limit));
+      }
+
+      const topDecorators = await cursor.toArray();
+      res.send(topDecorators);
     });
 
     // Connect the client to the server	(optional starting in v4.7)
