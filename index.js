@@ -76,6 +76,15 @@ async function run() {
       res.send(topDecorators);
     });
 
+//bookings get api
+app.get("/bookings/:id", async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const booking = await bookingsCollection.findOne(query);
+  res.send(booking);
+});
+
+//booking post api
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
       booking.createdAt = new Date();
