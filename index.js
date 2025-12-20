@@ -26,9 +26,20 @@ async function run() {
 
     // Get all services with optional limit
     app.get("/services", async (req, res) => {
-      const { limit } = req.query;
+      const { limit, search, category, sort } = req.query;
+      const query = {};
+      if (search) {
+        query.service_name = { $regex: search, $options: "i" };
+      }
+      if (category) {
+        query.service_category = category;
+      }
 
-      let cursor = servicesCollection.find().sort({ createdAt: -1 });
+      let sortOption = { createdAt: -1 };
+      if (sort === "price_asc") sortOption = { cost: 1 };
+      else if (sort === "price_desc") sortOption = { cost: -1 };
+
+      let cursor = servicesCollection.find(query).sort(sortOption);
 
       if (limit) {
         cursor = cursor.limit(parseInt(limit));
