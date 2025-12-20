@@ -84,6 +84,18 @@ async function run() {
       res.send(booking);
     });
 
+    //booking get api by user Email
+
+    app.get("/bookings/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { userEmail: email };
+      const bookings = await bookingsCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(bookings);
+    });
+
     //booking post api
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
