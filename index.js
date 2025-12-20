@@ -24,6 +24,20 @@ async function run() {
     const servicesCollection = database.collection("services");
     const usersCollection = database.collection("users");
 
+    // Get all services with optional limit
+    app.get("/services", async (req, res) => {
+      const { limit } = req.query;
+
+      let cursor = servicesCollection.find().sort({ createdAt: -1 });
+
+      if (limit) {
+        cursor = cursor.limit(parseInt(limit));
+      }
+
+      const services = await cursor.toArray();
+      res.send(services);
+    });
+
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
     // Send a ping to confirm a successful connection
