@@ -48,6 +48,13 @@ async function run() {
       const services = await cursor.toArray();
       res.send(services);
     });
+    //services details
+    app.get("/services/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const service = await servicesCollection.findOne(query);
+      res.send(service);
+    });
 
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
