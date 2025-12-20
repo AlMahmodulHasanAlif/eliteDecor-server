@@ -23,6 +23,7 @@ async function run() {
     const database = client.db("eliteDecorDB");
     const servicesCollection = database.collection("services");
     const usersCollection = database.collection("users");
+    const bookingsCollection = database.collection("booking");
 
     // Get all services with optional limit
     app.get("/services", async (req, res) => {
@@ -55,7 +56,7 @@ async function run() {
       const result = await servicesCollection.findOne(query);
       res.send(result);
     });
-
+    //top decorator
     app.get("/decorators/top", async (req, res) => {
       const { limit } = req.query;
       const query = {
@@ -73,6 +74,17 @@ async function run() {
 
       const topDecorators = await cursor.toArray();
       res.send(topDecorators);
+    });
+
+    app.post("/bookings", async (req, res) => {
+      const booking = req.body;
+      booking.createdAt = new Date();
+      booking.status = "pending";
+      booking.paid = false;
+      booking.projectStatus = "assigned";
+
+      const result = await bookingsCollection.insertOne(booking);
+      res.send(result);
     });
 
     // Connect the client to the server	(optional starting in v4.7)
