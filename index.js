@@ -104,6 +104,22 @@ async function run() {
       res.send(result);
     });
 
+    //booking update
+
+    app.patch("/bookings/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updateData = req.body;
+      const updateDoc = {
+        $set: {
+          ...updateData,
+          updatedAt: new Date(),
+        },
+      };
+      const result = await bookingsCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
     // Send a ping to confirm a successful connection
