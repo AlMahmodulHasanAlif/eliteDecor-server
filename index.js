@@ -76,15 +76,15 @@ async function run() {
       res.send(topDecorators);
     });
 
-//bookings get api
-app.get("/bookings/:id", async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  const booking = await bookingsCollection.findOne(query);
-  res.send(booking);
-});
+    //bookings get api
+    app.get("/bookings/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const booking = await bookingsCollection.findOne(query);
+      res.send(booking);
+    });
 
-//booking post api
+    //booking post api
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
       booking.createdAt = new Date();
@@ -93,6 +93,14 @@ app.get("/bookings/:id", async (req, res) => {
       booking.projectStatus = "assigned";
 
       const result = await bookingsCollection.insertOne(booking);
+      res.send(result);
+    });
+
+    //delete booking
+    app.delete("/bookings/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await bookingsCollection.deleteOne(query);
       res.send(result);
     });
 
