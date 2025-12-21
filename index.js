@@ -370,7 +370,7 @@ app.get('/admin/decorators/active', async (req, res) => {
   res.send(decorators);
 });
 
-// Assign decorator to booking (Admin) - ONLY if paid
+// Assign decorator to booking (Admin) 
 app.patch('/admin/bookings/:id/assign-decorator', async (req, res) => {
   const id = req.params.id;
   const { decoratorEmail, decoratorName } = req.body;
@@ -400,6 +400,54 @@ app.patch('/admin/bookings/:id/assign-decorator', async (req, res) => {
   res.send(result);
 });
 
+
+
+// Get decorator's assigned bookings
+app.get('/decorator/bookings/:email', async (req, res) => {
+  const email = req.params.email;
+  const query = { assignedDecoratorEmail: email };
+  const bookings = await bookingsCollection.find(query).sort({ createdAt: -1 }).toArray();
+  res.send(bookings);
+});
+
+// Update project status (Decorator)
+app.patch('/decorator/bookings/:id/status', async (req, res) => {
+  const id = req.params.id;
+  const { projectStatus } = req.body;
+  
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = {
+    $set: {
+      projectStatus: projectStatus,
+      updatedAt: new Date()
+    }
+  };
+  
+  const result = await bookingsCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
+// Get decorator earnings (Decorator)
+app.get('/decorator/earnings/:email', async (req, res) => {
+  const email = req.params.email;
+  const completedBookings = await bookingsCollection.find({
+    assignedDecoratorEmail: email,
+    projectStatus: 'completed',
+    paid: true
+  }).toArray();
+  
+  const totalEarnings = completedBookings.reduce((sum, booking) => {
+    return sum + (booking.totalCost || 0);
+  }, 0);
+  
+  const totalProjects = completedBookings.length;
+  
+  res.send({
+    totalEarnings,
+    totalProjects,
+    completedBookings
+  });
+});
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
     // Send a ping to confirm a successful connection
