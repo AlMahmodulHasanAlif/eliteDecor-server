@@ -8,6 +8,17 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 //middleware
 app.use(cors());
 app.use(express.json());
+//verifyadmin
+const verifyAdmin = async (req, res, next) => {
+  const email = req.user.email;
+  const user = await usersCollection.findOne({ email });
+  
+  if (user?.role !== 'admin') {
+    return res.status(403).send({ message: 'Forbidden: Admin access required' });
+  }
+  
+  next();
+};  
 
 const uri = `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASS}@cluster0.ill4a2j.mongodb.net/?appName=Cluster0`;
 
@@ -24,6 +35,33 @@ async function run() {
     const servicesCollection = database.collection("services");
     const usersCollection = database.collection("users");
     const bookingsCollection = database.collection("booking");
+
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
+      res.send(user);
+    });
+
+    //get user data
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+
+      const existingUser = await usersCollection.findOne({
+        email: user.email,
+      });
+
+      if (existingUser) {
+        return res.send({ message: "User already exists" });
+      }
+
+      const result = await usersCollection.insertOne({
+        ...user,
+        role: "user",
+        createdAt: new Date(),
+      });
+
+      res.send(result);
+    });
 
     // Get all services with optional limit
     app.get("/services", async (req, res) => {
@@ -132,6 +170,177 @@ async function run() {
       res.send(result);
     });
 
+// checking email
+  app.get('/users/:email/role', async (req, res) => {
+  const email = req.params.email;
+  const query = { email };
+  const user = await usersCollection.findOne(query);
+  res.send({ role: user?.role || 'user' });
+});
+
+// Get all services by admin
+app.get('/services', async (req, res) => {
+  const { limit, search, category, minPrice, maxPrice } = req.query;
+  const query = {};
+  if (search) {
+    query.service_name = { $regex: search, $options: "i" };
+  }
+  if (category && category !== 'all') {
+    query.service_category = category;
+  }
+  if (minPrice || maxPrice) {
+    query.cost = {};
+    if (minPrice) query.cost.$gte = parseFloat(minPrice);
+    if (maxPrice) query.cost.$lte = parseFloat(maxPrice);
+  }
+  let cursor = servicesCollection.find(query).sort({ createdAt: -1 });
+  if (limit) {
+    cursor = cursor.limit(parseInt(limit));
+  }
+  const services = await cursor.toArray();
+  res.send(services);
+});
+
+
+// Update service (Admin)
+app.put('/services/:id', async (req, res) => {
+  const id = req.params.id;
+  const filter = { _id: new ObjectId(id) };
+  const updatedService = req.body;
+  delete updatedService._id; // Remove _id from update
+  const updateDoc = { 
+    $set: {
+      ...updatedService,
+      updatedAt: new Date()
+    }
+  };
+  const result = await servicesCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
+// Create service Admin
+app.post('/services', async (req, res) => {
+  const service = req.body;
+  service.createdAt = new Date();
+  const result = await servicesCollection.insertOne(service);
+  res.send(result);
+});
+
+
+// Delete service by admin
+app.delete('/services/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await servicesCollection.deleteOne(query);
+  res.send(result);
+});
+
+    
+    // admin booking
+    app.get("/admin/bookings", async (req, res) => {
+      const { status, paid } = req.query;
+      let query = {};
+
+      if (status) {
+        query.status = status;
+      }
+
+      if (paid !== undefined) {
+        query.paid = paid === "true";
+      }
+
+      const bookings = await bookingsCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(bookings);
+    });
+
+    // Get all users Admin
+    app.get("/admin/users", async (req, res) => {
+      const { role, searchText } = req.query;
+      let query = {};
+
+      if (role) {
+        query.role = role;
+      }
+
+      if (searchText) {
+        query.$or = [
+          { name: { $regex: searchText, $options: "i" } },
+          { email: { $regex: searchText, $options: "i" } },
+        ];
+      }
+
+      const users = await usersCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(users);
+    });
+
+    // Make user a decorator (Admin)
+    app.patch("/admin/users/:email/make-decorator", async (req, res) => {
+      const email = req.params.email;
+      const decoratorInfo = {
+        rating: 0,
+        specialties: [],
+        experience: "0 years",
+        completedProjects: 0,
+        status: "active",
+        bio: "",
+        availability: true,
+      };
+
+      const filter = { email: email };
+      const updateDoc = {
+        $set: {
+          role: "decorator",
+          decoratorInfo: decoratorInfo,
+          updatedAt: new Date(),
+        },
+      };
+
+      const result = await usersCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+
+//make decorator to user by admin
+
+    app.patch("/admin/users/:email/demote-decorator", async (req, res) => {
+  const email = req.params.email;
+
+  const filter = { email: email };
+  const updateDoc = {
+    $set: {
+      role: "user",
+      decoratorInfo: null,
+      updatedAt: new Date(),
+    },
+  };
+
+  const result = await usersCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+    // Assign decorator to booking (Admin)
+    app.patch("/admin/bookings/:id/assign-decorator", async (req, res) => {
+      const id = req.params.id;
+      const { decoratorEmail, decoratorName } = req.body;
+
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          assignedDecoratorEmail: decoratorEmail,
+          assignedDecoratorName: decoratorName,
+          status: "confirmed",
+          updatedAt: new Date(),
+        },
+      };
+
+      const result = await bookingsCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
     // Send a ping to confirm a successful connection
