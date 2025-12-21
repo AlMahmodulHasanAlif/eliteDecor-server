@@ -314,7 +314,7 @@ app.delete('/services/:id', async (req, res) => {
   const filter = { email: email };
   const updateDoc = {
     $set: {
-      role: "user",
+      role: "user",     
       decoratorInfo: null,
       updatedAt: new Date(),
     },
@@ -341,6 +341,65 @@ app.delete('/services/:id', async (req, res) => {
       const result = await bookingsCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
+
+//Manage Booking section
+// Get all bookings (Admin)
+app.get('/admin/bookings', async (req, res) => {
+  const { status, paid } = req.query;
+  let query = {};
+
+  if (status && status !== 'all') {
+    query.status = status;
+  }
+
+  if (paid && paid !== 'all') {
+    query.paid = paid === 'true';
+  }
+
+  const bookings = await bookingsCollection.find(query).sort({ createdAt: -1 }).toArray();
+  res.send(bookings);
+});
+
+// Get active decorators for assignment (Admin)
+app.get('/admin/decorators/active', async (req, res) => {
+  const query = { 
+    role: 'decorator', 
+    'decoratorInfo.status': 'active' 
+  };
+  const decorators = await usersCollection.find(query).toArray();
+  res.send(decorators);
+});
+
+// Assign decorator to booking (Admin) - ONLY if paid
+app.patch('/admin/bookings/:id/assign-decorator', async (req, res) => {
+  const id = req.params.id;
+  const { decoratorEmail, decoratorName } = req.body;
+  
+  // Check if booking exists and is paid
+  const booking = await bookingsCollection.findOne({ _id: new ObjectId(id) });
+  
+  if (!booking) {
+    return res.status(404).send({ message: 'Booking not found' });
+  }
+  
+  if (!booking.paid) {
+    return res.status(400).send({ message: 'Cannot assign decorator. Booking is not paid yet.' });
+  }
+  
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = {
+    $set: {
+      assignedDecoratorEmail: decoratorEmail,
+      assignedDecoratorName: decoratorName,
+      status: 'confirmed',
+      updatedAt: new Date()
+    }
+  };
+  
+  const result = await bookingsCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
     // Send a ping to confirm a successful connection
