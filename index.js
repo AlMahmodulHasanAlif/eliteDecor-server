@@ -4,6 +4,7 @@ const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 //middleware
 app.use(cors());
@@ -20,6 +21,86 @@ const verifyAdmin = async (req, res, next) => {
   next();
 };  
 
+app.post('/create-checkout-session', (req, res) => {
+  const { booking } = req.body;
+
+  stripe.checkout.sessions.create({
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price_data: {
+          currency: 'bdt',
+          product_data: {
+            name: booking.serviceName,
+            description: `Booking for ${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.location}`,
+          },
+          unit_amount: booking.totalCost * 100, 
+        },
+        quantity: 1,
+      },
+    ],
+    mode: 'payment',
+    success_url: `${process.env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${booking._id}`,
+    cancel_url: `${process.env.CLIENT_URL}/payment/cancel?booking_id=${booking._id}`,
+    metadata: {
+      bookingId: booking._id,
+      userEmail: booking.userEmail,
+    },
+  })
+  .then(session => {
+    res.send({ url: session.url });
+  })
+  .catch(error => {
+    res.status(500).send({ error: error.message });
+  });
+});
+
+
+// // Verify payment and save to database
+// app.post('/verify-payment', (req, res) => {
+//   const { sessionId, bookingId } = req.body;
+
+//   stripe.checkout.sessions.retrieve(sessionId)
+//     .then(session => {
+//       if (session.payment_status !== 'paid') {
+//         return res.status(400).send({ error: 'Payment not completed' });
+//       }
+
+//       const payment = {
+//         bookingId: bookingId,
+//         transactionId: session.payment_intent,
+//         amount: session.amount_total / 100,
+//         currency: session.currency.toUpperCase(),
+//         userEmail: session.metadata.userEmail,
+//         status: 'completed',
+//         createdAt: new Date(),
+//       };
+
+//       return paymentsCollection.insertOne(payment)
+//         .then(result => {
+//           return bookingsCollection.updateOne(
+//             { _id: new ObjectId(bookingId) },
+//             {
+//               $set: {
+//                 paid: true,
+//                 paymentId: result.insertedId,
+//                 transactionId: session.payment_intent,
+//                 updatedAt: new Date(),
+//               },
+//             }
+//           ).then(() => {
+//             res.send({ success: true, payment });
+//           });
+//         });
+//     })
+//     .catch(error => {
+//       res.status(500).send({ error: error.message });
+//     });
+// });
+
+
+
+
 const uri = `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASS}@cluster0.ill4a2j.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -35,6 +116,104 @@ async function run() {
     const servicesCollection = database.collection("services");
     const usersCollection = database.collection("users");
     const bookingsCollection = database.collection("booking");
+    const paymentsCollection = database.collection("payments");
+
+
+
+
+app.post('/create-checkout-session', async (req, res) => {
+  const { booking } = req.body;
+
+  if (!booking) return res.status(400).send({ error: 'Booking required' });
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'bdt',
+            product_data: {
+              name: booking.serviceName,
+              description: `Booking for ${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.location}`,
+            },
+            unit_amount: booking.totalCost * 100,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${process.env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${booking._id}`,
+      cancel_url: `${process.env.CLIENT_URL}/payment/cancel?booking_id=${booking._id}`,
+      metadata: {
+        bookingId: booking._id,
+        userEmail: booking.userEmail,
+      },
+    });
+
+    res.send({ url: session.url });
+  } catch (error) {
+    console.error('Stripe create session error:', error);
+    res.status(500).send({ error: error.message });
+  }
+});
+
+
+app.get('/payments/user/:email', async (req, res) => {
+  const email = req.params.email;
+  const query = { userEmail: email };
+  const payments = await paymentsCollection
+    .find(query)
+    .sort({ createdAt: -1 })
+    .toArray();
+  res.send(payments);
+})
+// Verify Stripe payment
+app.post('/verify-payment', async (req, res) => {
+  const { sessionId, bookingId } = req.body;
+
+  if (!sessionId || !bookingId) {
+    return res.status(400).send({ error: 'Session ID and Booking ID required' });
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.payment_status !== 'paid') {
+      return res.status(400).send({ error: 'Payment not completed' });
+    }
+
+    const payment = {
+      bookingId,
+      transactionId: session.payment_intent,
+      amount: session.amount_total / 100,
+      currency: session.currency.toUpperCase(),
+      userEmail: session.metadata.userEmail,
+      status: 'completed',
+      createdAt: new Date(),
+    };
+
+    const result = await paymentsCollection.insertOne(payment);
+
+    await bookingsCollection.updateOne(
+      { _id: new ObjectId(bookingId) },
+      {
+        $set: {
+          paid: true,
+          paymentId: result.insertedId,
+          transactionId: session.payment_intent,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    res.send({ success: true, payment });
+  } catch (error) {
+    console.error('Verify payment error:', error);
+    res.status(500).send({ error: error.message });
+  }
+});
+
 
     app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
@@ -426,6 +605,43 @@ app.patch('/decorator/bookings/:id/status', async (req, res) => {
   const result = await bookingsCollection.updateOne(filter, updateDoc);
   res.send(result);
 });
+
+
+// Get all bookings for decorator (see all projects)
+app.get('/decorator/bookings/:email', async (req, res) => {
+  const email = req.params.email;
+  
+  if (req.user.email !== email) {
+    return res.status(403).send({ message: 'Forbidden access' });
+  }
+  
+  // Get all bookings
+  const bookings = await bookingsCollection
+    .find({})
+    .sort({ bookingDate: -1 })
+    .toArray();
+  
+  res.send(bookings);
+});
+
+// Update project status (decorator can update any booking)
+app.patch('/decorator/bookings/:id/status', async (req, res) => {
+  const id = req.params.id;
+  const { projectStatus } = req.body;
+  
+  // Update project status
+  const result = await bookingsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { 
+      $set: { 
+        projectStatus: projectStatus,
+        updatedAt: new Date()
+      } 
+    }
+  );
+  
+  res.send(result);
+})
 
 // Get decorator earnings (Decorator)
 app.get('/decorator/earnings/:email', async (req, res) => {
